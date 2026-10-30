@@ -22,6 +22,13 @@ Der Browser öffnet sich auf `http://127.0.0.1:8765/`. Windows: `start.bat` (liv
 
 Die NYSE handelt 09:30–16:00 New York, das ist meist 15:30–22:00 deutscher Zeit.
 
+## Charts, Auto-Werte, Auto-Pilot
+
+- **Charts:** Tab „Charts“ und Chart im Trade-Tab zeigen Kerzen (1m/5m/15m), VWAP, Volumen und deine Plan-Linien (Einstieg, Stop, Ziel, Opening Range, „raus bis“). Mit Maus fahren zeigt die Kerzenwerte. „live alle 15 s“ aktualisiert während der Börse.
+- **Auto-Werte:** Felder mit dem Hinweis *auto* füllt das Dashboard selbst (Aktie aus Treffer/Entry, Level, Budget, Flat-by-Zeit, Stop- und Ziel-Preise, Alert-Werte). Was du von Hand änderst, überschreibt es nie.
+- **Auto-Pilot:** Schalter im Trade-Tab. Prüft im Takt (15–120 s) den Einstieg, startet bei Ausbruch die ganze Kette (Stop & Ziel, Time Machine, Größe, Risiko, Ticket), legt die Alerts an und meldet sich mit Ton und Browser-Hinweis. **Bestellt wird nie automatisch**, das Ja bleibt im Claude-Chat. Tab muss offen bleiben.
+- **Ton & Bewegung:** Schalter „Ton an/aus“ oben rechts. Animationen sind aus, wenn dein System „Bewegung reduzieren“ meldet.
+
 ## Was das Dashboard bewusst nicht tut
 
 - **Keine Orders senden, kein „Ja“ speichern.** Das bleibt im Chat, damit du jede Order einzeln bestätigst.

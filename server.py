@@ -21,6 +21,9 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -538,6 +541,88 @@ def remove_alert(rid):
         write_json("state/alerts.json", st)
 
 
+# ---------------------------------------------------------------- charts
+
+CHART_HOSTS = ("https://query2.finance.yahoo.com", "https://query1.finance.yahoo.com")
+CHART_UA = "Mozilla/5.0 (compatible; day-trader-dashboard/1.0)"
+CHART_CACHE = {}
+CHART_LOCK = threading.Lock()
+
+
+def _r4(x):
+    return None if x is None else round(float(x), 4)
+
+
+def chart_data(symbol, interval):
+    """Kerzen eines Handelstags (Yahoo v8 chart, gratis, verzoegert) samt VWAP."""
+    interval = choice(interval, ("1m", "5m", "15m"), "Intervall")
+    key = (symbol, interval)
+    with CHART_LOCK:
+        hit = CHART_CACHE.get(key)
+        if hit and time.time() - hit[0] < 8:
+            return hit[1]
+    imin = int(interval[:-1])
+    if CFG["demo"]:
+        if symbol != "TSLA" or interval != "5m":
+            raise Bad("Demo-Modus: Chart-Daten gibt es nur fuer TSLA in 5m")
+        with open(os.path.join(DEMO, "entry-TSLA.json"), encoding="utf-8") as fh:
+            raw = json.load(fh)
+    else:
+        raw, err = None, None
+        qs = "range=1d&interval=%s&includePrePost=false" % interval
+        for host in CHART_HOSTS:
+            url = "%s/v8/finance/chart/%s?%s" % (host, urllib.parse.quote(symbol, safe=""), qs)
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": CHART_UA, "Accept": "application/json"})
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    raw = json.loads(resp.read().decode("utf-8"))
+                break
+            except urllib.error.HTTPError as exc:
+                err = "Yahoo antwortet mit HTTP %d%s" % (exc.code, " (Kuerzel unbekannt?)" if exc.code == 404 else "")
+            except (urllib.error.URLError, OSError, ValueError) as exc:
+                err = "Kursabruf fehlgeschlagen: %s" % getattr(exc, "reason", exc)
+        if raw is None:
+            raise ConnectionError(err or "Kursabruf fehlgeschlagen")
+    try:
+        res = raw["chart"]["result"][0]
+        meta, ts, q = res["meta"], res["timestamp"], res["indicators"]["quote"][0]
+    except (KeyError, IndexError, TypeError):
+        raise Bad("Keine Kursdaten fuer %s" % symbol)
+    off = int(meta.get("gmtoffset") or -14400)
+    reg = (meta.get("currentTradingPeriod") or {}).get("regular") or {}
+    open_min = ((int(reg["start"]) + off) % 86400) // 60 if "start" in reg else 570
+    close_min = ((int(reg["end"]) + off) % 86400) // 60 if "end" in reg else 960
+    if CFG["demo"]:
+        h, m = DEMO_NOW.split()[1].split(":")
+        now_epoch = None
+        now_min = int(h) * 60 + int(m)
+    else:
+        now_epoch, now_min = time.time(), None
+    bars, pv, vv = [], 0.0, 0.0
+    for i, t in enumerate(ts):
+        o, hi, lo, c, v = (q["open"][i], q["high"][i], q["low"][i], q["close"][i], (q.get("volume") or [None] * len(ts))[i])
+        if None in (o, hi, lo, c):
+            continue
+        minute = ((t + off) % 86400) // 60
+        if now_min is not None and minute > now_min:
+            continue
+        v = v or 0
+        pv += (hi + lo + c) / 3.0 * v
+        vv += v
+        forming = (now_epoch is not None and t + imin * 60 > now_epoch) or (now_min is not None and minute + imin > now_min)
+        bars.append({"m": minute, "o": _r4(o), "h": _r4(hi), "l": _r4(lo), "c": _r4(c), "v": int(v),
+                     "vwap": _r4(pv / vv) if vv else _r4(c), "forming": bool(forming)})
+    if not bars:
+        raise Bad("Noch keine Kerzen fuer %s (Markt noch nicht offen?)" % symbol)
+    out = {"symbol": symbol, "interval": interval, "interval_min": imin, "open_min": open_min, "close_min": close_min,
+           "date": time.strftime("%Y-%m-%d", time.gmtime(ts[0] + off)), "prev_close": _r4(meta.get("chartPreviousClose") or meta.get("previousClose")),
+           "currency": meta.get("currency") or "USD", "live": not CFG["demo"], "bars": bars,
+           "as_of": datetime.datetime.now(datetime.timezone.utc).isoformat()}
+    with CHART_LOCK:
+        CHART_CACHE[key] = (time.time(), out)
+    return out
+
+
 def prepare_workspace():
     work = os.path.join(HERE, "workspace-demo" if CFG["demo"] else "workspace")
     CFG["work"] = work
@@ -584,6 +669,14 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, fh.read(), "text/html; charset=utf-8")
         elif path == "/api/state":
             self._json(200, build_state())
+        elif path == "/api/chart":
+            qs = urllib.parse.parse_qs(self.path.partition("?")[2])
+            try:
+                self._json(200, chart_data(sym((qs.get("symbol") or [""])[0]), (qs.get("interval") or ["5m"])[0]))
+            except Bad as exc:
+                self._json(400, {"error": str(exc)})
+            except ConnectionError as exc:
+                self._json(502, {"error": str(exc)})
         elif path == "/favicon.ico":
             self._send(204, b"", "image/x-icon")
         else:
