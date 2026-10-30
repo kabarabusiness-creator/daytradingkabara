@@ -556,7 +556,12 @@ async function post(url, body) {
   let res;
   try { res = await fetch(url, {method: "POST", headers: {"Content-Type": "application/json", "X-Requested-With": "dash"}, body: JSON.stringify(body)}); }
   catch (e) { toast("Server nicht erreichbar. Läuft server.py noch?", "e"); throw e; }
-  return res.json();
+  return safeJson(res);
+}
+async function safeJson(res) {
+  const t = await res.text();
+  try { return JSON.parse(t); }
+  catch (e) { throw new Error(t.trim().startsWith("<") ? "Der Server kennt diese Funktion nicht. Bitte server.py beenden und die neue Version starten (alte Version läuft noch, oder die Seite kommt nicht von server.py)." : "Ungültige Antwort vom Server"); }
 }
 
 /* run one skill action; logs it; returns the result object (or null on refusal) */
@@ -588,7 +593,7 @@ function openDlg(title, html) { $("#dlgT").textContent = title; $("#dlgB").inner
 
 /* ------------------------------------------------------------------ state */
 async function refresh() {
-  try { S = await (await fetch("/api/state")).json(); } catch (e) { return; }
+  try { S = await safeJson(await fetch("/api/state")); } catch (e) { return; }
   renderAll();
 }
 async function loadClock() {
@@ -1193,7 +1198,7 @@ async function loadChart(opts = {}) {
   if (chartBusy) return; chartBusy = true;
   try {
     const res = await fetch(`/api/chart?symbol=${encodeURIComponent(s)}&interval=${encodeURIComponent(iv)}`);
-    const j = await res.json(); if (!res.ok) throw new Error(j.error || "Chart nicht verfügbar");
+    const j = await safeJson(res); if (!res.ok) throw new Error(j.error || "Chart nicht verfügbar");
     const key = s + "|" + iv, fresh = key !== chartKey; chartKey = key; chartData = j;
     charts.forEach(c => { c.setMsg(""); if (fresh) c.animate(); else c.draw(); });
     renderChartInfo();
