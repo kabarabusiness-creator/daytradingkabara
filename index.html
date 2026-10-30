@@ -592,8 +592,15 @@ function renderLog() {
 function openDlg(title, html) { $("#dlgT").textContent = title; $("#dlgB").innerHTML = html; const d = $("#dlg"); if (!d.open) d.showModal(); }
 
 /* ------------------------------------------------------------------ state */
+function noServer() {
+  if (document.getElementById("noSrv")) return;
+  const d = document.createElement("div"); d.id = "noSrv";
+  d.style.cssText = "position:fixed;inset:0;z-index:99;background:#0b1018;color:#e6edf7;display:flex;align-items:center;justify-content:center;padding:24px;font:16px/1.55 system-ui,sans-serif";
+  d.innerHTML = `<div style="max-width:560px"><h2 style="margin:0 0 10px">Hier läuft nur die Oberfläche, der Server fehlt</h2><p>Dieses Dashboard braucht das Programm <b>server.py</b> auf deinem Computer. Eine Webseite allein (z. B. GitHub Pages) kann die Trader-Skills nicht ausführen.</p><ol><li>Ordner herunterladen und entpacken</li><li>Terminal im Ordner öffnen: <code>python3 server.py --demo</code></li><li>Im Browser öffnen: <code>http://127.0.0.1:8765/</code></li></ol></div>`;
+  document.body.appendChild(d);
+}
 async function refresh() {
-  try { S = await safeJson(await fetch("/api/state")); } catch (e) { return; }
+  try { S = await safeJson(await fetch("/api/state")); } catch (e) { noServer(); return; }
   renderAll();
 }
 async function loadClock() {
