@@ -1303,10 +1303,16 @@ async function autoTick() {
   try {
     let s = val("sym").toUpperCase(); if (!s) { autofill(); s = val("sym").toUpperCase(); }
     if (!s) { auto.msg = "keine Aktie: oben eintragen oder Scan starten"; return; }
-    if (S.mode !== "demo" && mem.clock && mem.clock.c && !mem.clock.c.open) { auto.msg = "Markt zu, wartet auf den Börsenstart"; return; }
+    if (S.mode !== "demo") {
+      await loadClock(); const c = mem.clock && mem.clock.c;
+      if (c && !c.open) { auto.msg = `Markt zu${c.next_open ? ", öffnet " + String(c.next_open).replace("T", " ").slice(0, 16) + " NY" : ""}, wartet auf den Börsenstart`; return; }
+    }
     auto.msg = `prüft ${s} …`; apRender(); loadChart({quiet: true});
     sfxQuiet++; let r; try { r = await run("entry_check", {symbol: s, ...entryParams()}, null, {quiet: true}); } finally { sfxQuiet--; }
-    if (!r || !r.ok) { auto.msg = "Abruf fehlgeschlagen, neuer Versuch im nächsten Takt"; return; }
+    if (!r || !r.ok) {
+      const why = r ? (r.stderr || r.stdout || "").trim().split("\n").slice(-1)[0].slice(0, 140) : "Server nicht erreichbar";
+      auto.msg = `Abruf fehlgeschlagen${why ? " (" + why + ")" : ""}, neuer Versuch im nächsten Takt`; return;
+    }
     if (r.json) mem.entryFull = r.json;
     await refresh();
     if (((F("alerts") || {}).rules || []).length) await alertsCheck(null);
